@@ -1,0 +1,290 @@
+###
+# ver. 1.0
+# This playbook creates users for Windows AD, VPN, onlyoffice and rocket-chat
+# It takes params from var file and uses other file with credentials where it needs.
+# Because I hadn't LDAP integration for last two services, I needed to add new users manually each time.
+# So, this playbook helps to add new users to infrastructure a little bit easier.
+# And it's my second playbook :)    
+#
+# Params aka --extra-vars:
+# - AD - AD-server for AD user creation
+# - GW - gateway group for vpn user creation
+###
+---
+- name: add user to AD
+  hosts: "{{ AD }}"
+  gather_facts: no
+  vars_files:
+         - "../../production/vars/create_users.yaml"
+  tasks:
+  - name: create users
+    community.windows.win_domain_user:
+       name: "{{ item.name}}"
+       firstname: "{{ item.firstname }}"
+       surname: "{{ item.surname }}"
+       upn: "{{item.name}}@domain.local" # add your domain here
+       password: "{{ item.password }}"
+       state: present 
+       fullname: "{{ item.fullname }}"
+       password_never_expires: "{{ item.password_never_expires }}"
+       path: "{{item.path}}"
+    loop: "{{ users_attributes }}" 
+
+  - name: add users to groups
+    community.windows.win_domain_user:
+       name: "{{ item.0.name }}" 
+       groups: "{{ item.1 }}"
+       groups_action: "{{ item.0.groups_action }}"
+    loop: "{{ users_attributes|sublements('groups') }}"
+
+- name: vpn
+  hosts: "{{ GW }}"
+  gather_facts: no
+  vars_files:
+         - "../../production/vars/create_users.yaml"
+  tasks:
+  - name: add user
+    community.routeros.command:
+        commands:
+               - /ppp secret add name={{item.name}} password={{item.vpn_password}} service=l2tp profile={{item.vpn_profile}}
+    loop: "{{ users_attributes }}"
+   
+- name: create vpn configs
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+         - "../../production/vars/different_credentials.yaml"
+         - "../../production/vars/create_users.yaml"
+  tasks:
+  - name: create tmp dirs
+    ansible.builtin.file:
+        path: /tmp/vpn_{{ item.name }}
+        state: directory
+        mode: '0755'
+    loop: "{{ users_attributes }}"
+
+  - name: generate config for MS task scheduller(before)
+    ansible.builtin.template:
+        src: ../../templates/MS_ts_vpn_before.j2
+        dest: /tmp/vpn_{{item.name}}/{{item.name}}-before.xml
+    loop: "{{ users_attributes }}"
+
+  - name: generate config for MS task scheduller(logon)
+    ansible.builtin.template:
+        src: ../../templates/MS_ts_vpn_logon.j2
+        dest: /tmp/vpn_{{item.name}}/{{item.name}}-logon.xml
+    loop: "{{ users_attributes }}"
+
+  - name: generate config for MS task scheduller(period)
+    ansible.builtin.template:
+        src: ../../templates/MS_ts_vpn_period.j2
+        dest: /tmp/vpn_{{item.name}}/{{item.name}}-period.xml
+    loop: "{{ users_attributes }}"
+  
+  - name: mnt share
+    mount:
+        state: mounted
+        fstype: cifs
+        name: /mnt/share
+        src: //ip_addr/srv # can be edited to yours FS server
+        opts: 'username={{ shd2_smb_username }},password={{ shd2_smb_password }},vers=1.0'
+        state: mounted
+    become: true
+
+  - name: move config files from srv to share
+    shell: cp -r /tmp/vpn_{{item.name}}/ /mnt/share/vpn-user-config/
+    loop: "{{ users_attributes }}"
+
+  - name: delete tmp files
+    file:
+       path: /tmp/vpn_{{ item.name }}
+       state: absent
+    loop: "{{ users_attributes }}"
+   
+  - name: umount dir
+    mount:
+        path: /mnt/share
+        state: absent
+    become: true
+
+- name: create onlyoffice user via API
+  gather_facts: false
+  hosts: localhost
+  become: false
+  vars_files:
+         - "../../production/vars/different_credentials.yaml"
+         - "../../production/vars/create_users.yaml"
+  tasks:
+  - name: login to onlyoffice API
+    uri:
+       url: https://onlyoffice/api/2.0/authentication.json
+       method: POST
+       body_format: json
+       body: '{
+         "userName": "{{ onlyoffice_username }}",
+         "password": "{{ onlyoffice_password }}"
+       }'
+       status_code: 201
+       timeout: 30
+    register: login
+
+  - name: create user 
+    uri:
+       url: https://onlyoffice/api/2.0/people
+       method: POST
+       body_format: json
+       headers:
+         Content-Type: application/json
+         Accept: application/json
+         Authorization: "{{ login.json.response.token }}"
+       body: '{
+         "isVisitor": "False",
+         "email": "{{ item.email }}",
+         "firstname": "{{ item.othername }}",
+         "lastname": "{{ item.surname }}",
+         "password": "{{ item.password }}",
+         "location": "{{ item.location }}",
+         "birthday": "{{ item.birthday }}",
+         "sex": "{{ item.sex }}",
+       }'
+       status_code: 201
+    loop: "{{ users_attributes }}"
+
+  - name: get new users info
+    uri:
+       url: https://onlyoffice/api/2.0/people/email?email={{item.email}}
+       method: GET
+       body_format: json
+       headers:
+         Content-Type: application/json
+         Accept: application/json
+         Authorization: "{{ login.json.response.token }}"
+    register: onlyoffice_new_users
+    loop: "{{ users_attributes }}"
+
+  - name: create list of IDs
+    set_fact: 
+         IDs: "{{ IDs |default([]) + [item.json.response.id] }}"
+    loop: "{{ onlyoffice_new_users.results }}"
+
+  - name: add IDs to file
+    lineinfile:
+        path: "../../production/vars/create_users.yaml"
+        state: present
+        firstmatch: yes
+        insertafter: "{{item.0.name}}@agroplus-group.ru\n"
+        line: "    id_{{item.0.name}}: {{ item.1 }}"
+    loop: "{{ users_attributes | zip(IDs) }}"
+
+  - name: rename named ID to ID
+    ansible.builtin.replace:
+        path: "../../production/vars/create_users.yaml"
+        regexp: "id.+:"
+        replace: "id:"
+
+  - include_vars:
+       file: ../../production/vars/create_users.yaml
+
+  - name: add contacts
+    uri:
+       url: https://onlyoffice/api/2.0/people/{{item.0.id}}/contacts
+       method: POST
+       body_format: json
+       headers:
+         Content-Type: application/json
+         Accept: application/json
+         Authorization: "{{ login.json.response.token }}"
+       body: '{
+         "contacts": [
+           {
+              "Type": "{{ item.1 }}",
+              "Value": "{{ item.0.email }}"
+          }
+         ],
+       }'
+       status_code: 201
+    loop: "{{ users_attributes|sublements('contacts') }}"
+
+  - name: get all groups 
+    uri:
+       url: https://onlyoffice/api/2.0/group
+       method: GET
+       body_format: json
+       headers:
+         Content-Type: application/json
+         Accept: application/json
+         Authorization: "{{ login.json.response.token }}"
+    register: onlyoffice_groups
+
+  - name: get one group
+    set_fact: 
+       group: "{{ item.1.id }}"
+    when: item.1.name == item.0.department
+    loop: "{{ users_attributes|product(onlyoffice_groups.json.response) }}"
+
+  - name: add to group
+    uri:
+       url: https://onlyoffice/api/2.0/group/{{group}}/members
+       method: PUT
+       body_format: json
+       headers:
+         Content-Type: application/json
+         Accept: application/json
+         Authorization: "{{ login.json.response.token }}"
+       body: '{
+         "members": "{{item.id}}"
+       }'
+       status_code: 200
+    loop: "{{ users_attributes }}"
+
+
+- name: create chat user via API
+  gather_facts: false
+  hosts: localhost
+  become: false
+  vars_files:
+         - "../../production/vars/different_credentials.yaml"
+         - "../../production/vars/create_users.yaml"
+  tasks:
+  - name: login to chat API
+    uri:
+       url: https://rocket-chat/api/v1/login
+       method: POST
+       body_format: json
+       body: '{
+         "user": "{{ rocket_username }}",
+         "password": "{{ onlyoffice_password }}",
+       }'
+       status_code: 200
+       timeout: 30
+    register: login
+
+  - name: add user to chat
+    uri:   
+       url: https://rocket-chat/api/v1/users.create
+       method: POST
+       body_format: json
+       headers:
+         X-Auth-Token:  "{{ login.json.data.authToken }}"
+         X-User-Id: "{{ login.json.data.userId }}"
+         Content-Type: application/json
+       body: '{
+         "email": "{{ item.email }}",
+         "name": "{{ item.surname }} {{ item.othername }}",
+         "password": "{{ item.password }}",
+         "username": "{{ item.name }}",
+         "active": true,
+         "joinDefaultChannels": true,
+         "requirePasswordChange": false,
+         "sendWelcomeEmail": false,
+         "verified": true,
+         "roles": ["user"]      
+       }'
+    loop: "{{ users_attributes }}"
+
+
+
+
+
+
+

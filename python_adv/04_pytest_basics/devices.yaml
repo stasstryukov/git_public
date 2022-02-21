@@ -1,0 +1,19 @@
+- device_type: cisco_ios
+  host: 172.16.250.10
+  username: stasstr
+  password: 5Gjkzhyjtcbzybt1
+  secret: cisco
+  fast_cli: true
+- device_type: cisco_ios
+  host: 172.16.250.11
+  username: stasstr
+  password: 5Gjkzhyjtcbzybt1
+  secret: cisco
+  fast_cli: true
+- device_type: cisco_ios
+  host: 10.0.14.101
+  username: stasstr
+  password: 5Gjkzhyjtcbzybt1
+  secret: cisco
+  fast_cli: true
+

@@ -1,0 +1,162 @@
+###                                                                                                                                                                  [0/0]
+## ver. 1.0
+## This playbook deletes users from Windows AD, VPN, onlyoffice and rocket-chat
+## It takes params from var file and uses other file with credentials where it needs.
+## Because I hadn't LDAP integration for last two services, I needed to add new users manually each time.
+## So, this playbook helps to delets users from infrastructure a little bit easier.
+## And it's my third playbook :)
+##
+## Params aka --extra-vars:
+## - AD - AD-server for AD user creation
+## - GW - gateway group for vpn user creation
+####
+
+
+---
+- name: delete users from AD
+  hosts: "{{ AD }}"
+  gather_facts: no
+  vars_files:
+         - "../../production/vars/delete_users.yaml"
+  tasks:
+  - name: delete users
+    community.windows.win_domain_user:
+         name: "{{ item.name }}"
+         state: absent
+    loop: "{{ users_attributes }}"
+
+- name: vpn
+  hosts: "{{ GW }}"
+  gather_facts: no
+  vars_files:
+         - "../../production/vars/delete_users.yaml"
+  tasks:
+  - name: delete vpn users
+    community.routeros.command:
+        commands:
+            - /ppp secret remove {{item.name}}
+    loop: "{{users_attributes}}"
+
+- name: delete vpn configs
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+         - "../../production/vars/different_credentials.yaml"
+         - "../../production/vars/delete_users.yaml"
+  tasks:
+  - name: mnt share
+    mount:
+        state: mounted
+        fstype: cifs
+        name: /mnt/share
+        src: //ip/srv
+        opts: 'username={{ shd2_smb_username }},password={{ shd2_smb_password }},vers=1.0'
+        state: mounted
+    become: true
+
+  - name: remove configs
+    shell: rm -r /mnt/share/vpn-user-config/vpn_{{item.name}}
+    loop: "{{ users_attributes }}"
+
+  - name: umount dir
+    mount:
+        path: /mnt/share
+        state: absent
+    become: true
+
+- name: delete Onlyoffice users
+  gather_facts: false
+  hosts: localhost
+  become: false
+  vars_files:
+         - "../../production/vars/different_credentials.yaml"
+         - "../../production/vars/delete_users.yaml"
+  tasks:
+  - name: login to onlyoffice API
+    uri:
+       url: https://onlyoffice/api/2.0/authentication.json
+       method: POST
+       body_format: json
+       body: '{
+         "userName": "{{ onlyoffice_username }}",
+         "password": "{{ onlyoffice_password }}"
+       }'
+       status_code: 201
+       timeout: 30
+    register: login
+
+  - name: get users info
+    uri:
+       url: https://onlyoffice/api/2.0/people/email?email={{item.email}}
+       method: GET
+       body_format: json
+       headers:
+         Content-Type: application/json
+         Accept: application/json
+         Authorization: "{{ login.json.response.token }}"
+    register: onlyoffice_new_users
+    loop: "{{ users_attributes }}"
+
+  - name: create list of IDs
+    set_fact:
+         IDs: "{{ IDs |default([]) + [item.json.response.id] }}"
+    loop: "{{ onlyoffice_new_users.results }}"
+
+  - name: put users to terminated
+    uri:
+       url: https://onlyoffice/api/2.0/people/status/terminated 
+       method: PUT
+       body_format: json
+       headers:
+         Content-Type: application/json
+         Accept: application/json
+         Authorization: "{{ login.json.response.token }}"
+       body: '{
+         "userIds": "{{item}}"
+       }'
+    loop: "{{ IDs }}"
+
+  - name: delete users
+    uri:
+       url: https://onlyoffice/api/2.0/people/{{item}}
+       method: DELETE
+       headers:
+         Content-Type: application/json
+         Accept: application/json
+         Authorization: "{{ login.json.response.token }}"
+    loop: "{{ IDs }}"
+  
+- name: delete chat users
+  gather_facts: false
+  hosts: localhost
+  become: false
+  vars_files:
+         - "../../production/vars/different_credentials.yaml"
+         - "../../production/vars/delete_users.yaml"
+  tasks:
+  - name: login to chat API
+    uri:
+       url: https://rocket-chat/api/v1/login
+       method: POST
+       body_format: json
+       body: '{
+         "user": "{{ rocket_username }}",
+         "password": "{{ onlyoffice_password }}",
+       }'
+       status_code: 200
+       timeout: 30
+    register: login
+
+  - name: delete user to chat
+    uri:
+       url: https://rocket-chat/api/v1/users.delete
+       method: POST
+       body_format: json
+       headers:
+         X-Auth-Token:  "{{ login.json.data.authToken }}"
+         X-User-Id: "{{ login.json.data.userId }}"
+         Content-Type: application/json
+       body: '{
+         "username": "{{ item.name }}"  
+       }'
+    loop: "{{ users_attributes }}"

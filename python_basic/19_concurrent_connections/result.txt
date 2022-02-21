@@ -1,0 +1,69 @@
+configure terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+R2(config)#router ospf 1
+R2(config-router)#network 0.0.0.0 255.255.255.255 area 0
+R2(config-router)#end
+R2#configure terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+R1(config)#router ospf 1
+R1(config-router)#network 0.0.0.0 255.255.255.255 area 0
+R1(config-router)#end
+R1#configure terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+R3(config)#router ospf 1
+R3(config-router)#network 0.0.0.0 255.255.255.255 area 0
+R3(config-router)#end
+R3#R1#sh ip ospf nei
+%OSPF: Router process 3 is not running, please configure a router-id
+%OSPF: Router process 2 is not running, please configure a router-id
+
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+192.168.1.102     1   2WAY/DROTHER    00:00:35    192.168.1.102   GigabitEthernet0/0
+192.168.1.103     1   2WAY/DROTHER    00:00:35    192.168.1.103   GigabitEthernet0/0
+R3#sh ip ospf nei
+%OSPF: Router process 3 is not running, please configure a router-id
+%OSPF: Router process 2 is not running, please configure a router-id
+
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+192.168.1.101     1   2WAY/DROTHER    00:00:36    192.168.1.101   GigabitEthernet0/0
+192.168.1.102     1   2WAY/DROTHER    00:00:35    192.168.1.102   GigabitEthernet0/0
+R2#sh ip ospf nei
+%OSPF: Router process 3 is not running, please configure a router-id
+%OSPF: Router process 2 is not running, please configure a router-id
+
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+192.168.1.101     1   2WAY/DROTHER    00:00:36    192.168.1.101   GigabitEthernet0/0
+192.168.1.103     1   2WAY/DROTHER    00:00:35    192.168.1.103   GigabitEthernet0/0
+configure terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+R1(config)#
+R1(config)#end
+R1#configure terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+R3(config)#
+R3(config)#end
+R3#configure terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+R2(config)#
+R2(config)#end
+R2#R2#sh ip ospf nei
+%OSPF: Router process 3 is not running, please configure a router-id
+%OSPF: Router process 2 is not running, please configure a router-id
+
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+192.168.1.101     1   FULL/DROTHER    00:00:38    192.168.1.101   GigabitEthernet0/0
+192.168.1.103     1   FULL/DR         00:00:37    192.168.1.103   GigabitEthernet0/0
+R3#sh ip ospf nei
+%OSPF: Router process 3 is not running, please configure a router-id
+%OSPF: Router process 2 is not running, please configure a router-id
+
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+192.168.1.101     1   FULL/DROTHER    00:00:38    192.168.1.101   GigabitEthernet0/0
+192.168.1.102     1   FULL/BDR        00:00:38    192.168.1.102   GigabitEthernet0/0
+R1#sh ip ospf nei
+%OSPF: Router process 3 is not running, please configure a router-id
+%OSPF: Router process 2 is not running, please configure a router-id
+
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+192.168.1.102     1   FULL/BDR        00:00:38    192.168.1.102   GigabitEthernet0/0
+192.168.1.103     1   FULL/DR         00:00:37    192.168.1.103   GigabitEthernet0/0
