@@ -1,0 +1,112 @@
+####
+# Script helps to update mikrotik devices which use routeros onboard
+# By the way,  before using the scrypt,  u need to write your own backup config scrypts, or u can comment plays, if u dont want to make backups
+# Params aka --extra-vars:
+# - hosts_group - devices, which need to be updated
+###
+
+---
+- name: update router os firmware
+  hosts: "{{ hosts_group }}"
+  gather_facts: no
+  vars:
+          update_branch: "stable" ### can be changed to other branch 
+          available_hdd: "20.0" ### minimum amount of free hdd
+  tasks:
+  - name: get routeros facts
+    community.routeros.facts:
+            gather_subset: 
+               - "!interfaces"
+    register: output
+
+  - name: create current routeros var
+    set_fact:
+           old_routeros: "{{ansible_net_version}}"
+  
+  - name: check free hdd space
+    fail:
+            msg: "There is not enought memory for update"  
+    failed_when: ansible_net_memfree_mb < {{ available_hdd }}
+          
+
+  - name: set channel version to {{update_branch}} channel
+    community.routeros.command:
+            commands:
+                    - /system package update set channel={{update_branch}}
+                 
+  - name: check internet if switch
+    community.routeros.command:  
+            commands:
+                    - put [:resolv ya.ru]
+    register: dns_result                   
+    when: '"SW" in ansible_net_hostname'
+    failed_when: dns_result is regex("(.+)failure")
+   
+    #  - name: get ping count
+    #set_fact:
+    #        var: "{{ ping_result.stdout | regex_search('(.+)received=(.+) .+', '\\2') }}"
+  
+  - name: check for update
+    community.routeros.command:
+            commands:
+                    - /system package update check-for-updates
+  
+
+  - name: get info about update  
+    community.routeros.command:
+            commands:
+                    - /system package update print
+    register: check_version
+    failed_when: check_version is not regex("(.+)New version is available")
+
+  - name: make backup files
+    community.routeros.command:
+            commands:
+                    - /system script run "backup_create"
+
+  - name: copy backup files
+    community.routeros.command:
+            commands:
+                    - /system script run "backup_copy" 
+
+  - name: delete backup files from device
+    community.routeros.command:
+            commands:
+                    - /system script run "backup_delete"
+
+  - name: check upload results
+    community.routeros.command:
+            commands:
+                    - /log print where message~"backup" time>([/system clock get time] - 2m)
+    register: upload_logs
+    failed_when: upload_logs is regex("(.+)failed$") 
+  
+
+  - name: download & install routeros
+    community.routeros.command:
+             commands:
+                     - /system package update install
+  
+  - name: wait for boot device and update routerboard
+    wait_for_connection:
+        delay: 250
+        timeout: 500
+
+
+  - name: get routeros facts
+    community.routeros.facts:
+            gather_subset:
+               - "!interfaces"               
+ 
+  - name: show debug
+    debug:
+         msg: "Update successfull from {{old_routeros}} to {{ansible_net_version}}"
+    when: '"{{ old_routeros }}" != ansible_net_version'     
+
+
+
+
+
+         
+
+
