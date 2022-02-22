@@ -1,5 +1,5 @@
 ####
-# Script helps to update mikrotik devices which use routeros onboard
+# Scrypt helps to update mikrotik devices which use routeros onboard
 # By the way,  before using the scrypt,  u need to write your own backup config scrypts, or u can comment plays, if u dont want to make backups
 # Params aka --extra-vars:
 # - hosts_group - devices, which need to be updated
