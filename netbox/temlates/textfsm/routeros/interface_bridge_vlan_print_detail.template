@@ -1,0 +1,7 @@
+Value vlan_id (\d+)
+Value List tagged (\S*)
+Value List untagged (.*)
+
+Start 
+ ^.+ids=${vlan_id}.+current-tagged=${tagged}.+untagged=${untagged} -> Record
+

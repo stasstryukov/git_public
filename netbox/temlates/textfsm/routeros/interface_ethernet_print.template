@@ -1,0 +1,6 @@
+Value num (\d+)
+Value name (\S+)
+
+Start
+  ^\s*${num}\s+\S+?\s+${name}.+ -> Record
+

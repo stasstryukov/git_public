@@ -1,0 +1,7 @@
+Value hardware_model (.+)
+Value serial_number (\S+)
+
+Start
+  ^model:\s${hardware_model}
+  ^serial-number:\s${serial_number}
+  

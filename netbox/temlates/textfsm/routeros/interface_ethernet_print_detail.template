@@ -1,0 +1,6 @@
+Value name (\S+)
+Value duplex (\S+)
+Value speed (\S+)
+
+Start
+  ^.+?name="${name}"\s+default-name.+full-duplex=${duplex}.+speed=${speed} -> Record

@@ -1,0 +1,8 @@
+Value name (\S+)
+Value speed (\S+)
+Value duplex (\S+)
+
+Start
+  ^\s*name:\s${name}
+  ^\s*rate:\s${speed} 
+  ^\s*full-duplex:\s${duplex}

@@ -1,0 +1,11 @@
+Value isUp (\S+)
+Value name (\S+)
+Value type (\S+)
+Value mtu (\d+)
+Value mac (\S+)
+
+Start
+  ^\d+\s+${isUp}.+?name=\"${name}\".+type=\"${type}\".+?mtu=${mtu}.+address=${mac} -> Record
+  ^\d+\s+${isUp}.+?name=\"${name}\".+type=\"${type}\".+?mtu=${mtu} -> Record
+  ^\d+\s+${isUp}.+?name=\"${name}\".+type=\"${type}\" -> Record
+  ^.*?name=\"${name}\".+type=\"${type}\" -> Record
