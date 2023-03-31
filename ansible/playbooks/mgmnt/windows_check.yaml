@@ -1,0 +1,93 @@
+---
+- name: looking for ap ad errors
+  hosts: windows_dc_ap
+  gather_facts: no
+  ignore_errors: yes
+  become_method: runas
+ 
+  vars: 
+     ansible_become_password: "{{ ansible_password }}"     
+
+  tasks:
+  - name: Send dcdiag to "{{ group_names[1] }}"
+    win_command: cmd.exe -
+    args:
+            stdin: dcdiag
+    become: yes
+    become_user: "{{ ansible_user }}"
+    register: dcdiag_ap
+    failed_when: "'failed test' in dcdiag_ap.stdout and 'failed test SystemLog' not in dcdiag_ap.stdout"       
+  
+
+  - name: Send repadmin to hosts
+    win_command: cmd.exe -
+    args:
+            stdin: "repadmin /showrepl"
+    register: repadmin_ap
+    failed_when: "'failed' in repadmin_ap.stdout"
+
+- name: looking for lb ad errors
+  hosts: windows_dc_lb
+  gather_facts: no
+  ignore_errors: yes
+  become_method: runas
+ 
+  vars: 
+     ansible_become_password: "{{ ansible_password }}"     
+     
+  tasks:
+  - name: Send dcdiag to "{{ group_names[1] }}"
+    win_command: cmd.exe -
+    args:
+            stdin: dcdiag
+    become: yes
+    become_user: "{{ ansible_user }}"
+    register: dcdiag_lb
+    failed_when: "'failed test' in dcdiag_lb.stdout and 'failed test SystemLog' not in dcdiag_lb.stdout"
+  
+  - name: Send repadmin to hosts
+    win_command: cmd.exe -
+    args:
+            stdin: "repadmin /showrepl"
+    register: repadmin_lb
+    failed_when: "'failed' in repadmin_lb.stdout"
+
+- name: check replica status
+  hosts: windows_ap_srv_phy
+  gather_facts: no
+  ignore_errors: yes
+  tasks:
+  - name: check replica
+    win_command: powershell.exe -
+    args:
+            stdin: Get-VMReplication
+    register: replica                 
+    failed_when: "'Warning' in replica.stdout or 'Critical' in replica.stdout"
+
+- name: check raid status on KRD-Reserve
+  hosts: KRD-SRV-RSV-1
+  gather_facts: no
+  tasks:
+  - name: send command        
+    win_command: cmd.exe -
+    args:
+          stdin: C:\zabbix\raid\sas3ircu.exe 0 status
+    register: raid_status
+    tags: raid 
+
+  - name: search
+    set_fact:
+            raid1: "{{ raid_status.stdout | regex_findall(regexp) | first }}"
+            raid2: "{{ raid_status.stdout | regex_findall(regexp) | last }}"
+    vars:
+            regexp: 'Volume state\s+: (\w+)'
+    failed_when: raid1 != 'Optimal' or raid2 != 'Optimal'
+    tags: raid        
+       
+  
+  - name: debug
+    debug:
+            var: raid1,raid2
+    tags: raid     
+  
+
